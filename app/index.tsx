@@ -43,10 +43,6 @@ export default function StartPage() {
       </View>
       <View style={styles.footer}>
         <View style={styles.footerInfo}>
-          <Text>Made by: Your Name</Text>
-          <Text>GitHub: github.com/yourusername</Text>
-        </View>
-        <View style={styles.footerInfo}>
           <Text>Inspired by: Skribbl.io</Text>
           <Text>Tech: React Native, Socket.IO</Text>
         </View>
