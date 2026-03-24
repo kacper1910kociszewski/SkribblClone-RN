@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, PanResponder, Platform } from 'react-native';
+import { View, Text, StyleSheet, PanResponder, Platform, TouchableOpacity } from 'react-native';
 import { useLocalSearchParams } from 'expo-router';
 import io from 'socket.io-client';
 import Svg, { Path } from 'react-native-svg';
@@ -22,6 +22,7 @@ export default function GameSession() {
         socket.emit("join-room", roomCode)
         socket.on("canvas-history", (history: string[]) => setPaths(history))
         socket.on("remote-draw", (path: string) => setPaths((prev) => [...prev, path]))
+        socket.on("clear-canvas", () => { setPaths([]), setCurrentPath('') })
 
         return () => {
             socket.off("canvas-history")
@@ -73,6 +74,12 @@ export default function GameSession() {
     return (
         <View style={styles.container}>
             <Text style={styles.header}>Room: {roomCode} | Player: {username}</Text>
+            <TouchableOpacity
+                    style={styles.clearBtn}
+                    onPress={() => socket.emit("clear-canvas", roomCode)}
+                >
+                    <Text style={styles.clearBtnText}>Clear Board</Text>
+                </TouchableOpacity>
             <View
                 ref={canvasRef}
                 onLayout={updateLayout}
@@ -105,17 +112,29 @@ const styles = StyleSheet.create({
         paddingTop: 60,
         alignItems: 'center'
     },
-    header: { 
-        color: 'white', 
-        fontWeight: 'bold', 
-        marginBottom: 15 
+    header: {
+        color: 'white',
+        fontWeight: 'bold',
+        marginBottom: 15
     },
-    canvas: { 
+    canvas: {
         width: '90%',
-        maxWidth: 500, 
-        aspectRatio: 1, 
-        backgroundColor: 'white', 
-        borderRadius: 12, 
-        overflow: 'hidden' 
+        maxWidth: 500,
+        aspectRatio: 1,
+        backgroundColor: 'white',
+        borderRadius: 12,
+        overflow: 'hidden'
+    },
+    clearBtn: {
+        backgroundColor: '#ff4444',
+        paddingHorizontal: 20,
+        paddingVertical: 10,
+        borderRadius: 20,
+        marginBottom: 15,
+        elevation: 5,
+    },
+    clearBtnText: {
+        color: 'white',
+        fontWeight: 'bold',
     },
 });
