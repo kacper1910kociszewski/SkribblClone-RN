@@ -46,6 +46,11 @@ io.on("connection", (socket) => {
   socket.on("disconnect", () => {
     console.log("Disconnected:", socket.id);
   });
+  
+  // Broadcast the line while it is still being drawn
+  socket.on("mid-draw", ({ path, roomCode }) => {
+    socket.to(roomCode).emit("remote-mid-draw", { path, userId: socket.id });
+  });
 });
 
 const PORT = 3000;
