@@ -30,6 +30,15 @@ async function ensureRoom(roomCode) {
 io.on("connection", (socket) => {
   console.log("Connected:", socket.id);
 
+  // Check if a room exists (has been used before)
+  socket.on("check-room", async (roomCode) => {
+    const { rows } = await pool.query(
+      `SELECT code FROM rooms WHERE code = $1`,
+      [roomCode]
+    );
+    socket.emit("room-exists", rows.length > 0);
+  });
+
   // 1. Join room — send full history (strokes + chat)
   socket.on("join-room", async (roomCode) => {
     console.log("join-room received:", roomCode);
