@@ -3,6 +3,8 @@ import React, { useState } from 'react';
 import { View, TextInput, TouchableOpacity, Text, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
 
+
+
 export default function StartPage() {
   const [name, setName] = useState('')
   const router = useRouter()
@@ -21,9 +23,9 @@ export default function StartPage() {
     }
   };
 
-///==================================\
-//|            RENDER                |
-//\==================================/
+  ///==================================\
+  //|            RENDER                |
+  //\==================================/
   return (
     <LinearGradient
       colors={['#0073df', '#04305a']}
@@ -84,11 +86,11 @@ const styles = StyleSheet.create({
     color: '#fff',
   },
   footerInfo: {
-    display: 'flex', 
-    flexDirection: 'column', 
-    justifyContent: "center", 
-    alignItems: 'center' , 
-    backgroundColor: '#483D8B', 
+    display: 'flex',
+    flexDirection: 'column',
+    justifyContent: "center",
+    alignItems: 'center',
+    backgroundColor: '#483D8B',
     width: "33.33vw",
   },
   title: {
