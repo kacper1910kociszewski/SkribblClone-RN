@@ -4,7 +4,7 @@ import { View, TextInput, TouchableOpacity, Text, StyleSheet, ActivityIndicator 
 import { useRouter } from 'expo-router';
 import io from 'socket.io-client';
 
-const socket = io("http://192.168.18.6:3000");
+const socket = io("http://192.168.1.227:3000");
 
 function generateRoomCode() {
   return Math.random().toString(36).substring(2, 8).toUpperCase(); // e.g. "A3BX9K"
