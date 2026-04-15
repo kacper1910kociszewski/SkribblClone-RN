@@ -24,16 +24,46 @@ const SOCKET_EVENTS: EventRow[] = [
     note: 'Returns room existence for join validation.',
   },
   {
+    event: 'check-username',
+    direction: 'Client -> Server',
+    payload: '{ username: string }',
+    note: 'Checks if nickname is already active on the server.',
+  },
+  {
+    event: 'username-check-result',
+    direction: 'Server -> Client',
+    payload: '{ taken: boolean }',
+    note: 'Returns nickname availability check result.',
+  },
+  {
     event: 'join-room',
     direction: 'Client -> Server',
     payload: '{ roomCode: string, username: string }',
     note: 'Joins room and initializes runtime room state.',
   },
   {
+    event: 'join-error',
+    direction: 'Server -> Client',
+    payload: '{ code: string, message: string }',
+    note: 'Rejects join when nickname is already taken.',
+  },
+  {
     event: 'room-state',
     direction: 'Server -> Client',
-    payload: '{ players: string[], drawerSocketId, drawerUsername, phase }',
-    note: 'Syncs room roster, drawer and phase.',
+    payload: '{ players, scores, matchActive, currentRound, maxRounds, drawerSocketId, drawerUsername, phase }',
+    note: 'Syncs lobby, scorerboard, match state and drawer info.',
+  },
+  {
+    event: 'start-match',
+    direction: 'Client -> Server',
+    payload: '{ roomCode: string, maxRounds: number }',
+    note: 'Starts a match (default 10 rounds if omitted).',
+  },
+  {
+    event: 'stop-match',
+    direction: 'Client -> Server',
+    payload: '{ roomCode: string }',
+    note: 'Stops current match and emits final standings.',
   },
   {
     event: 'word-options',
@@ -62,26 +92,26 @@ const SOCKET_EVENTS: EventRow[] = [
   {
     event: 'mid-draw',
     direction: 'Client -> Server',
-    payload: '{ roomCode: string, path: string }',
+    payload: '{ roomCode: string, path: string, color: string, strokeWidth: number, tool: pen|eraser }',
     note: 'Live stroke preview (not persisted).',
   },
   {
     event: 'remote-mid-draw',
     direction: 'Server -> Client',
-    payload: '{ path: string, userId: string }',
-    note: 'Broadcasts the drawer\'s live in-progress path.',
+    payload: '{ path: string, color: string, strokeWidth: number, tool: pen|eraser, userId: string }',
+    note: 'Broadcasts the drawer live in-progress styled path.',
   },
   {
     event: 'draw',
     direction: 'Client -> Server',
-    payload: '{ roomCode: string, path: string }',
+    payload: '{ roomCode: string, path: string, color: string, strokeWidth: number, tool: pen|eraser }',
     note: 'Finalized stroke; persisted to database.',
   },
   {
     event: 'remote-draw',
     direction: 'Server -> Client',
-    payload: '{ path: string }',
-    note: 'Broadcasts persisted stroke to other users.',
+    payload: '{ path: string, color: string, strokeWidth: number, tool: pen|eraser }',
+    note: 'Broadcasts persisted styled stroke to other users.',
   },
   {
     event: 'chat-message',
@@ -104,8 +134,14 @@ const SOCKET_EVENTS: EventRow[] = [
   {
     event: 'round-end',
     direction: 'Server -> Client',
-    payload: '{ word: string, winnerUsername, reason }',
+    payload: '{ word: string, winnerUsername, reason, currentRound, maxRounds }',
     note: 'Ends the round after guess or timeout.',
+  },
+  {
+    event: 'match-ended',
+    direction: 'Server -> Client',
+    payload: '{ reason: round-limit|stopped, standings, winners, currentRound, maxRounds }',
+    note: 'Final match results and winner list.',
   },
   {
     event: 'canvas-history',
@@ -148,6 +184,10 @@ export default function DocsPage() {
           <Text style={styles.paragraph}>
             Room phases: <Text style={styles.inlineCode}>waiting</Text>, <Text style={styles.inlineCode}>choosing</Text>,{' '}
             <Text style={styles.inlineCode}>drawing</Text>.
+          </Text>
+          <Text style={styles.paragraph}>
+            Match mode includes <Text style={styles.inlineCode}>start-match</Text>, <Text style={styles.inlineCode}>stop-match</Text>,
+            scoreboard sync, and round-limit end with standings.
           </Text>
         </View>
 
