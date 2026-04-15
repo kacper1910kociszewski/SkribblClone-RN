@@ -1,10 +1,10 @@
 import { LinearGradient } from 'expo-linear-gradient';
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { View, TextInput, TouchableOpacity, Text, StyleSheet, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
 import io from 'socket.io-client';
 
-const socket = io("http://192.168.1.227:3000");
+const socket = io("http://192.168.3.106:3000");
 
 function generateRoomCode() {
   return Math.random().toString(36).substring(2, 8).toUpperCase(); // e.g. "A3BX9K"
@@ -15,23 +15,39 @@ export default function StartPage() {
   const [roomInput, setRoomInput] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [pendingJoinCode, setPendingJoinCode] = useState<string | null>(null);
   const router = useRouter();
 
-  const goToRoom = (roomCode: string) => {
-    router.push({
-      pathname: "/game",
-      params: { username: name.trim(), roomCode }
-    });
-  };
+  const onUsernameCheckResult = useCallback(({ taken }: { taken: boolean }) => {
+    setLoading(false);
+    const desiredCode = pendingJoinCode;
+    setPendingJoinCode(null);
+    const trimmedName = name.trim();
+
+    if (taken) {
+      setError(`Nickname "${trimmedName}" is already in use`);
+      return;
+    }
+
+    if (desiredCode) {
+      router.push({
+        pathname: '/game',
+        params: { username: trimmedName, roomCode: desiredCode },
+      });
+    }
+  }, [name, pendingJoinCode, router]);
 
   // Generate a fresh code and go straight in — room is created on join-room
   const handleCreate = () => {
     if (!name.trim()) { setError('Enter a nickname first'); return; }
     const code = generateRoomCode();
-    goToRoom(code);
+    setLoading(true);
+    setError('');
+    setPendingJoinCode(code);
+    socket.emit('check-username', name.trim());
   };
 
-  // Check the room exists on the server before navigating
+  // Check room and username before navigating
   const handleJoin = () => {
     if (!name.trim()) { setError('Enter a nickname first'); return; }
     const code = roomInput.trim().toUpperCase();
@@ -39,24 +55,32 @@ export default function StartPage() {
 
     setLoading(true);
     setError('');
+    setPendingJoinCode(code);
 
     socket.emit("check-room", code);
     socket.once("room-exists", (exists: boolean) => {
-      setLoading(false);
       if (exists) {
-        goToRoom(code);
+        socket.emit('check-username', name.trim());
       } else {
+        setLoading(false);
+        setPendingJoinCode(null);
         setError(`Room "${code}" not found`);
       }
     });
   };
+
+  useEffect(() => {
+    socket.on('username-check-result', onUsernameCheckResult);
+    return () => {
+      socket.off('username-check-result', onUsernameCheckResult);
+    };
+  }, [onUsernameCheckResult]);
 
   return (
     <LinearGradient colors={['#0073df', '#04305a']} style={styles.container}>
       <Text style={styles.title}>Skribbl.io Clone</Text>
 
       <View style={styles.card}>
-        {/* Nickname */}
         <Text style={styles.label}>Nickname</Text>
         <TextInput
           style={styles.input}
@@ -96,6 +120,11 @@ export default function StartPage() {
         }
 
         {/* Error */}
+        <TouchableOpacity style={styles.docsLink} onPress={() => router.push('/docs')}>
+          <Text style={styles.docsLinkText}>Read API Docs</Text>
+        </TouchableOpacity>
+
+        {/* Nickname */}
         {error ? <Text style={styles.error}>{error}</Text> : null}
       </View>
 
@@ -122,6 +151,18 @@ const styles = StyleSheet.create({
     shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 12,
     elevation: 8,
   },
+  docsLink: {
+    alignSelf: 'center',
+    backgroundColor: '#eef6ff',
+    borderWidth: 1,
+    borderColor: '#c5ddff',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    marginBottom: 12,
+    marginTop: 12,
+  },
+  docsLinkText: { color: '#0356a5', fontWeight: 'bold', fontSize: 12 },
   label: { fontWeight: 'bold', marginBottom: 6, color: '#333' },
   input: {
     borderWidth: 1, borderColor: '#ccc', borderRadius: 8,

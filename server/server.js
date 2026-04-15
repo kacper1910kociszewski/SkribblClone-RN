@@ -17,6 +17,7 @@ const ROOM_PHASE = {
 const CHOOSE_SECONDS = 10;
 const DRAW_SECONDS = 90;
 const NEXT_ROUND_DELAY_MS = 3000;
+const DEFAULT_MAX_ROUNDS = 10;
 
 const WORD_BANK = [
   "avalanche",
@@ -71,6 +72,22 @@ function normalizeUsername(value) {
   return clean.length > 0 ? clean.slice(0, 20) : fallback;
 }
 
+function normalizeStrokeStyle(payload) {
+  const color = typeof payload?.color === "string" && payload.color.trim().length > 0
+    ? payload.color.trim()
+    : "#000000";
+  const rawWidth = Number(payload?.strokeWidth);
+  const strokeWidth = Number.isFinite(rawWidth) ? Math.min(Math.max(rawWidth, 1), 48) : 5;
+  const tool = payload?.tool === "eraser" ? "eraser" : "pen";
+  return { color, strokeWidth, tool };
+}
+
+function normalizeRounds(value) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return DEFAULT_MAX_ROUNDS;
+  return Math.min(Math.max(Math.floor(parsed), 1), 30);
+}
+
 function maskWord(word) {
   return word.replace(/[A-Za-z0-9]/g, "_");
 }
@@ -99,6 +116,10 @@ function getOrCreateRuntimeRoom(roomCode) {
   if (!runtimeRooms.has(roomCode)) {
     runtimeRooms.set(roomCode, {
       players: [],
+      scores: {},
+      matchActive: false,
+      currentRound: 0,
+      maxRounds: DEFAULT_MAX_ROUNDS,
       drawerIndex: 0,
       phase: ROOM_PHASE.WAITING,
       currentWord: null,
@@ -127,10 +148,29 @@ function emitRoomState(roomCode) {
   const drawer = getDrawer(roomState);
   io.to(roomCode).emit("room-state", {
     players: roomState ? roomState.players.map((p) => p.username) : [],
+    scores: roomState
+      ? roomState.players.map((p) => ({
+        username: p.username,
+        points: roomState.scores[p.username] || 0,
+      }))
+      : [],
+    matchActive: roomState ? roomState.matchActive : false,
+    currentRound: roomState ? roomState.currentRound : 0,
+    maxRounds: roomState ? roomState.maxRounds : DEFAULT_MAX_ROUNDS,
     drawerSocketId: drawer ? drawer.socketId : null,
     drawerUsername: drawer ? drawer.username : null,
     phase: roomState && roomState.players.length > 0 ? roomState.phase : ROOM_PHASE.WAITING,
   });
+}
+
+function buildStandings(roomState) {
+  if (!roomState) return [];
+  return roomState.players
+    .map((player) => ({
+      username: player.username,
+      points: roomState.scores[player.username] || 0,
+    }))
+    .sort((a, b) => b.points - a.points || a.username.localeCompare(b.username));
 }
 
 function emitRoundStart(roomCode) {
@@ -235,6 +275,73 @@ function rotateDrawer(roomState) {
   roomState.drawerIndex = (roomState.drawerIndex + 1) % roomState.players.length;
 }
 
+function setRoomWaiting(roomCode) {
+  const roomState = runtimeRooms.get(roomCode);
+  if (!roomState) return;
+
+  clearRoomTimers(roomState);
+  roomState.phase = ROOM_PHASE.WAITING;
+  roomState.currentWord = null;
+  roomState.wordOptions = [];
+  roomState.revealedIndexes = new Set();
+  roomState.hintsRevealed = 0;
+
+  emitRoomState(roomCode);
+  io.to(roomCode).emit("timer-update", { phase: ROOM_PHASE.WAITING, secondsLeft: 0 });
+  io.to(roomCode).emit("round-start", { displayWord: "" });
+}
+
+function endMatch(roomCode, reason = "round-limit") {
+  const roomState = runtimeRooms.get(roomCode);
+  if (!roomState) return;
+
+  clearRoomTimers(roomState);
+  roomState.matchActive = false;
+  roomState.phase = ROOM_PHASE.WAITING;
+  roomState.currentWord = null;
+  roomState.wordOptions = [];
+  roomState.revealedIndexes = new Set();
+  roomState.hintsRevealed = 0;
+
+  const standings = buildStandings(roomState);
+  const topScore = standings.length > 0 ? standings[0].points : 0;
+  const winners = standings.filter((s) => s.points === topScore).map((s) => s.username);
+
+  emitRoomState(roomCode);
+  io.to(roomCode).emit("match-ended", {
+    reason,
+    standings,
+    currentRound: roomState.currentRound,
+    maxRounds: roomState.maxRounds,
+    winners,
+  });
+  io.to(roomCode).emit("timer-update", { phase: ROOM_PHASE.WAITING, secondsLeft: 0 });
+}
+
+function startMatch(roomCode, requestedMaxRounds = DEFAULT_MAX_ROUNDS) {
+  const roomState = runtimeRooms.get(roomCode);
+  if (!roomState) return;
+  if (roomState.players.length < 2) {
+    setRoomWaiting(roomCode);
+    return;
+  }
+
+  roomState.maxRounds = normalizeRounds(requestedMaxRounds);
+  roomState.currentRound = 0;
+  roomState.matchActive = true;
+  roomState.scores = {};
+  roomState.players.forEach((player) => {
+    roomState.scores[player.username] = 0;
+  });
+
+  if (roomState.drawerIndex >= roomState.players.length) {
+    roomState.drawerIndex = 0;
+  }
+
+  emitRoomState(roomCode);
+  startWordChoosing(roomCode);
+}
+
 function finishRound(roomCode, outcome) {
   const roomState = runtimeRooms.get(roomCode);
   if (!roomState || !roomState.currentWord) return;
@@ -242,6 +349,10 @@ function finishRound(roomCode, outcome) {
   clearRoomTimers(roomState);
 
   const revealedWord = roomState.currentWord;
+  if (outcome?.winnerUsername) {
+    roomState.scores[outcome.winnerUsername] = (roomState.scores[outcome.winnerUsername] || 0) + 1;
+  }
+  roomState.currentRound += 1;
   roomState.phase = ROOM_PHASE.WAITING;
   roomState.wordOptions = [];
   roomState.currentWord = null;
@@ -251,7 +362,19 @@ function finishRound(roomCode, outcome) {
     word: revealedWord,
     winnerUsername: outcome?.winnerUsername || null,
     reason: outcome?.reason || "time-up",
+    currentRound: roomState.currentRound,
+    maxRounds: roomState.maxRounds,
   });
+
+  if (roomState.matchActive && roomState.currentRound >= roomState.maxRounds) {
+    endMatch(roomCode, "round-limit");
+    return;
+  }
+
+  if (roomState.players.length < 2) {
+    setRoomWaiting(roomCode);
+    return;
+  }
 
   rotateDrawer(roomState);
   roomState.nextRoundTimeout = setTimeout(() => {
@@ -263,8 +386,17 @@ function finishRound(roomCode, outcome) {
 
 function startWordChoosing(roomCode) {
   const roomState = runtimeRooms.get(roomCode);
+  if (!roomState || !roomState.matchActive) {
+    setRoomWaiting(roomCode);
+    return;
+  }
+  if (!roomState || roomState.players.length < 2) {
+    setRoomWaiting(roomCode);
+    return;
+  }
+
   const drawer = getDrawer(roomState);
-  if (!roomState || !drawer) return;
+  if (!drawer) return;
 
   clearRoomTimers(roomState);
 
@@ -292,6 +424,14 @@ function startWordChoosing(roomCode) {
 async function startRound(roomCode, chosenWord) {
   const roomState = runtimeRooms.get(roomCode);
   if (!roomState) return;
+  if (!roomState.matchActive) {
+    setRoomWaiting(roomCode);
+    return;
+  }
+  if (roomState.players.length < 2) {
+    setRoomWaiting(roomCode);
+    return;
+  }
 
   clearRoomTimers(roomState);
 
@@ -326,17 +466,41 @@ function isCurrentDrawer(socketId, roomCode) {
   return Boolean(drawer && drawer.socketId === socketId);
 }
 
+function isUsernameTaken(serverUsername, currentSocketId) {
+  const target = String(serverUsername || "").trim().toLowerCase();
+  if (!target) return false;
+
+  for (const roomState of runtimeRooms.values()) {
+    const exists = roomState.players.some((player) => {
+      if (player.socketId === currentSocketId) return false;
+      return String(player.username || "").trim().toLowerCase() === target;
+    });
+    if (exists) return true;
+  }
+
+  return false;
+}
+
 function removePlayerFromRuntimeRooms(socketId) {
   for (const [roomCode, roomState] of runtimeRooms.entries()) {
     const removedIndex = roomState.players.findIndex((p) => p.socketId === socketId);
     if (removedIndex === -1) continue;
 
     const wasDrawer = removedIndex === roomState.drawerIndex;
+    const removedPlayer = roomState.players[removedIndex];
     roomState.players.splice(removedIndex, 1);
+    if (removedPlayer) {
+      delete roomState.scores[removedPlayer.username];
+    }
 
     if (roomState.players.length === 0) {
       clearRoomTimers(roomState);
       runtimeRooms.delete(roomCode);
+      return;
+    }
+
+    if (roomState.players.length < 2) {
+      setRoomWaiting(roomCode);
       return;
     }
 
@@ -371,6 +535,12 @@ io.on("connection", (socket) => {
     socket.emit("room-exists", rows.length > 0);
   });
 
+  socket.on("check-username", (username) => {
+    const cleanUsername = normalizeUsername(username);
+    const taken = isUsernameTaken(cleanUsername, socket.id);
+    socket.emit("username-check-result", { taken });
+  });
+
   // 1. Join room — send full history (strokes + chat)
   socket.on("join-room", async (payload) => {
     const roomCode = normalizeRoomCode(
@@ -380,6 +550,14 @@ io.on("connection", (socket) => {
       typeof payload === "string" ? "Player" : payload?.username
     );
     if (!roomCode) return;
+
+    if (isUsernameTaken(username, socket.id)) {
+      socket.emit("join-error", {
+        code: "USERNAME_TAKEN",
+        message: `Nickname \"${username}\" is already in use. Choose another one.`,
+      });
+      return;
+    }
 
     console.log("join-room received:", roomCode, username);
     socket.data.roomCode = roomCode;
@@ -392,6 +570,9 @@ io.on("connection", (socket) => {
     const alreadyInRoom = roomState.players.some((p) => p.socketId === socket.id);
     if (!alreadyInRoom) {
       roomState.players.push({ socketId: socket.id, username });
+      if (typeof roomState.scores[username] !== "number") {
+        roomState.scores[username] = 0;
+      }
       if (roomState.players.length === 1) {
         roomState.drawerIndex = 0;
       }
@@ -432,7 +613,33 @@ io.on("connection", (socket) => {
       return;
     }
 
-    startWordChoosing(roomCode);
+    if (roomState.players.length >= 2 && roomState.matchActive && roomState.currentRound < roomState.maxRounds) {
+      startWordChoosing(roomCode);
+    } else {
+      setRoomWaiting(roomCode);
+    }
+  });
+
+  socket.on("start-match", ({ roomCode, maxRounds }) => {
+    const cleanRoomCode = normalizeRoomCode(roomCode);
+    if (!cleanRoomCode) return;
+    const roomState = runtimeRooms.get(cleanRoomCode);
+    if (!roomState) return;
+    const isInRoom = roomState.players.some((p) => p.socketId === socket.id);
+    if (!isInRoom) return;
+
+    startMatch(cleanRoomCode, maxRounds);
+  });
+
+  socket.on("stop-match", ({ roomCode }) => {
+    const cleanRoomCode = normalizeRoomCode(roomCode);
+    if (!cleanRoomCode) return;
+    const roomState = runtimeRooms.get(cleanRoomCode);
+    if (!roomState) return;
+    const isInRoom = roomState.players.some((p) => p.socketId === socket.id);
+    if (!isInRoom) return;
+
+    endMatch(cleanRoomCode, "stopped");
   });
 
   socket.on("choose-word", async ({ roomCode, word }) => {
@@ -448,23 +655,32 @@ io.on("connection", (socket) => {
   });
 
   // 2. Completed stroke — save to DB, broadcast
-  socket.on("draw", async ({ path, roomCode }) => {
+  socket.on("draw", async (payload) => {
+    const { path, roomCode } = payload || {};
     const cleanRoomCode = normalizeRoomCode(roomCode);
     if (!isCurrentDrawer(socket.id, cleanRoomCode)) return;
+    const cleanPath = String(path || "").trim();
+    if (!cleanPath) return;
+    const style = normalizeStrokeStyle(payload);
+    const serializedStroke = JSON.stringify({ path: cleanPath, ...style });
 
     console.log("draw received for room:", roomCode);
     await pool.query(
       `INSERT INTO strokes (room_code, path) VALUES ($1, $2)`,
-      [cleanRoomCode, path]
+      [cleanRoomCode, serializedStroke]
     );
-    socket.to(cleanRoomCode).emit("remote-draw", path);
+    socket.to(cleanRoomCode).emit("remote-draw", { path: cleanPath, ...style });
   });
 
   // 3. Live stroke (not saved — just broadcast)
-  socket.on("mid-draw", ({ path, roomCode }) => {
+  socket.on("mid-draw", (payload) => {
+    const { path, roomCode } = payload || {};
     const cleanRoomCode = normalizeRoomCode(roomCode);
     if (!isCurrentDrawer(socket.id, cleanRoomCode)) return;
-    socket.to(cleanRoomCode).emit("remote-mid-draw", { path, userId: socket.id });
+    const cleanPath = String(path || "").trim();
+    if (!cleanPath) return;
+    const style = normalizeStrokeStyle(payload);
+    socket.to(cleanRoomCode).emit("remote-mid-draw", { path: cleanPath, ...style, userId: socket.id });
   });
 
   // 4. Clear canvas — delete strokes from DB
