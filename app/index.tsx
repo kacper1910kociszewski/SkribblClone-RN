@@ -1,6 +1,16 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import React, { useCallback, useEffect, useState } from 'react';
-import { View, TextInput, TouchableOpacity, Text, StyleSheet, ActivityIndicator } from 'react-native';
+import {
+  View,
+  TextInput,
+  TouchableOpacity,
+  Text,
+  StyleSheet,
+  ActivityIndicator,
+  KeyboardAvoidingView,
+  ScrollView,
+  Platform,
+} from 'react-native';
 import { useRouter } from 'expo-router';
 import io from 'socket.io-client';
 
@@ -78,55 +88,63 @@ export default function StartPage() {
 
   return (
     <LinearGradient colors={['#0073df', '#04305a']} style={styles.container}>
-      <Text style={styles.title}>Skribbl.io Clone</Text>
+      <KeyboardAvoidingView
+        style={styles.keyboardArea}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 16 : 0}
+      >
+        <ScrollView
+          style={styles.scrollArea}
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          <Text style={styles.title}>Skribbl.io Clone</Text>
 
-      <View style={styles.card}>
-        <Text style={styles.label}>Nickname</Text>
-        <TextInput
-          style={styles.input}
-          placeholder="Enter your nickname"
-          value={name}
-          onChangeText={(t) => { setName(t); setError(''); }}
-          maxLength={20}
-        />
+          <View style={styles.card}>
+            <Text style={styles.label}>Nickname</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Enter your nickname"
+              value={name}
+              onChangeText={(t) => { setName(t); setError(''); }}
+              maxLength={20}
+            />
 
-        {/* Divider */}
-        <View style={styles.divider} />
+            <View style={styles.divider} />
 
-        {/* Create room */}
-        <TouchableOpacity style={styles.btnPrimary} onPress={handleCreate}>
-          <Text style={styles.btnText}>🎨  Create New Room</Text>
-        </TouchableOpacity>
-
-        {/* Join existing room */}
-        <Text style={styles.orText}>— or join existing —</Text>
-
-        <TextInput
-          style={styles.input}
-          placeholder="Room code (e.g. A3BX9K)"
-          value={roomInput}
-          onChangeText={(t) => { setRoomInput(t); setError(''); }}
-          autoCapitalize="characters"
-          maxLength={10}
-        />
-
-        {loading
-          ? <ActivityIndicator color="#007BFF" style={{ marginTop: 12 }} />
-          : (
-            <TouchableOpacity style={styles.btnSecondary} onPress={handleJoin}>
-              <Text style={styles.btnText}>🚪  Join Room</Text>
+            <TouchableOpacity style={styles.btnPrimary} onPress={handleCreate}>
+              <Text style={styles.btnText}>🎨  Create New Room</Text>
             </TouchableOpacity>
-          )
-        }
 
-        {/* Error */}
-        <TouchableOpacity style={styles.docsLink} onPress={() => router.push('/docs')}>
-          <Text style={styles.docsLinkText}>Read API Docs</Text>
-        </TouchableOpacity>
+            <Text style={styles.orText}>— or join existing —</Text>
 
-        {/* Nickname */}
-        {error ? <Text style={styles.error}>{error}</Text> : null}
-      </View>
+            <TextInput
+              style={styles.input}
+              placeholder="Room code (e.g. A3BX9K)"
+              value={roomInput}
+              onChangeText={(t) => { setRoomInput(t); setError(''); }}
+              autoCapitalize="characters"
+              maxLength={10}
+            />
+
+            {loading
+              ? <ActivityIndicator color="#007BFF" style={{ marginTop: 12 }} />
+              : (
+                <TouchableOpacity style={styles.btnSecondary} onPress={handleJoin}>
+                  <Text style={styles.btnText}>🚪  Join Room</Text>
+                </TouchableOpacity>
+              )
+            }
+
+            <TouchableOpacity style={styles.docsLink} onPress={() => router.push('/docs')}>
+              <Text style={styles.docsLinkText}>Read API Docs</Text>
+            </TouchableOpacity>
+
+            {error ? <Text style={styles.error}>{error}</Text> : null}
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
 
       <View style={styles.footer}>
         <View style={styles.footerInfo}>
@@ -142,8 +160,16 @@ export default function StartPage() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  title: { fontSize: 48, fontWeight: 'bold', color: '#fff', marginBottom: 32 },
+  container: { flex: 1 },
+  keyboardArea: { flex: 1 },
+  scrollArea: { flex: 1 },
+  scrollContent: {
+    alignItems: 'center',
+    paddingTop: 48,
+    paddingBottom: 96,
+    minHeight: '100%',
+  },
+  title: { fontSize: 48, fontWeight: 'bold', color: '#fff', marginBottom: 24 },
   card: {
     width: '90%', maxWidth: 400,
     backgroundColor: '#fff',

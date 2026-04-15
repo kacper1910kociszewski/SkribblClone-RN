@@ -95,6 +95,7 @@ export default function GameSession() {
     const [maxRounds, setMaxRounds] = useState(10);
     const [roundsInput, setRoundsInput] = useState('10');
     const [matchResult, setMatchResult] = useState<MatchEndedPayload | null>(null);
+    const [isCanvasTouchActive, setIsCanvasTouchActive] = useState(false);
 
     const canvasRef = useRef<View>(null);
     const layout = useRef({ width: 0, height: 0, left: 0, top: 0 });
@@ -244,6 +245,7 @@ export default function GameSession() {
         onStartShouldSetPanResponder: () => canDraw,
         onPanResponderGrant: (evt) => {
             if (!canDraw) return;
+            setIsCanvasTouchActive(true);
             updateLayout();
             const { pageX, pageY } = evt.nativeEvent;
             const vX = ((pageX - layout.current.left) / layout.current.width) * VIRTUAL_SIZE;
@@ -266,6 +268,7 @@ export default function GameSession() {
             });
         },
         onPanResponderRelease: () => {
+            setIsCanvasTouchActive(false);
             if (!canDraw) return;
             if (currentPath) {
                 const stroke: StrokeData = {
@@ -278,6 +281,10 @@ export default function GameSession() {
                 socket.emit("draw", { roomCode, ...stroke });
                 setCurrentPath('');
             }
+        },
+        onPanResponderTerminate: () => {
+            setIsCanvasTouchActive(false);
+            setCurrentPath('');
         },
     });
 
@@ -313,6 +320,7 @@ export default function GameSession() {
                 contentContainerStyle={styles.scrollContent}
                 keyboardShouldPersistTaps="handled"
                 showsVerticalScrollIndicator={false}
+                scrollEnabled={!isCanvasTouchActive}
             >
                 <Text style={styles.header}>Room: {roomCode} | Player: {username}</Text>
                 <Text style={styles.subHeader}>Players: {roomPlayers.length} | Drawer: {drawerUsername || '-'}</Text>
@@ -447,6 +455,11 @@ export default function GameSession() {
                 <View
                     ref={canvasRef}
                     onLayout={updateLayout}
+                    onTouchStart={() => {
+                        if (canDraw) setIsCanvasTouchActive(true);
+                    }}
+                    onTouchEnd={() => setIsCanvasTouchActive(false)}
+                    onTouchCancel={() => setIsCanvasTouchActive(false)}
                     style={styles.canvas}
                     {...panResponder.panHandlers}
                 >
