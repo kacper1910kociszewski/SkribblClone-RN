@@ -1,5 +1,5 @@
 // app/game.tsx
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
     View, Text, StyleSheet, PanResponder, Platform,
     TouchableOpacity, TextInput, FlatList, KeyboardAvoidingView, ScrollView

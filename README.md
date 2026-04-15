@@ -137,6 +137,8 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO skribbl_user;
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO skribbl_user;
 ```
 
+![Database preview in Draw.io](db_draw.io.png)
+
 ---
 
 ## 2. Server Setup
